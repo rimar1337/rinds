@@ -11,8 +11,9 @@
 .vscode/
 .env
 
-# Feed Generator Binary
+# Misc Binaries
 feedgen
+indexer/indexer
 
 # Test binary, built with `go test -c`
 *.test
@@ -25,3 +26,7 @@ feedgen
 
 # Go workspace file
 go.work
+
+# trash
+.DS_Store
+/*/.DS_Store

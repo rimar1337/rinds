@@ -1,64 +1,78 @@
-# go-bsky-feed-generator
-A minimal implementation of a BlueSky Feed Generator in Go
+# Rinds
+A collection of feeds under one roof.
 
-
-## Requirements
-
-To run this feed generator, all you need is `docker` with `docker-compose`.
+I don't like Docker and I don't need to compile this, okay thanks!
 
 ## Running
-
-Start up the feed generator by running: `make up`
-
-This will build the feed generator service binary inside a docker container and stand up the service on your machine at port `9032`.
-
-To view a sample static feed (with only one post) go to:
-
-- [`http://localhost:9032/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:plc:replace-me-with-your-did/app.bsky.feed.generator/static`](http://localhost:9032/xrpc/app.bsky.feed.getFeedSkeleton?feed=at://did:plc:replace-me-with-your-did/app.bsky.feed.generator/static)
-
-Update the variables in `.env` when you actually want to deploy the service somewhere, at which point `did:plc:replace-me-with-your-did` should be replaced with the value of `FEED_ACTOR_DID`.
-
-## Accessing
-
-This service exposes the following routes:
-
-- `/.well-known/did.json`
-  - This route is used by ATProto to verify ownership of the DID the service is claiming, it's a static JSON document.
-  - You can see how this is generated in `pkg/gin/endpoints.go:GetWellKnownDID()`
-- `/xrpc/app.bsky.feed.getFeedSkeleton`
-  - This route is what clients call to generate a feed page, it includes three query parameters for feed generation: `feed`, `cursor`, and `limit`
-  - You can see how those are parsed and handled in `pkg/gin/endpoints.go:GetFeedSkeleton()`
-- `/xrpc/app.bsky.feed.describeFeedGenerator`
-  - This route is how the service advertises which feeds it supports to clients.
-  - You can see how those are parsed and handled in `pkg/gin/endpoints.go:DescribeFeeds()`
-
-## Publishing
-
-Once you've got your feed generator up and running and have it exposed to the internet, you can publish the feed using the script from the official BSky repo [here](https://github.com/bluesky-social/feed-generator/blob/main/scripts/publishFeedGen.ts).
-
-Your feed will be published under _your_ DID and should show up in your profile under the `feeds` tab.
-
-## Architecture
-
-This repo is structured to abstract away a `Feed` interface that allows for you to add all sorts of feeds to the router.
-
-These feeds can be simple static feeds like the `pkg/feeds/static/feed.go` implementation, or they can be much more complex feeds that draw on different data sources and filter them in cool ways to produce pages of feed items.
-
-The `Feed` interface is defined by any struct implementing two functions:
-
-``` go
-type Feed interface {
-	GetPage(ctx context.Context, feed string, userDID string, limit int64, cursor string) (feedPosts []*appbsky.FeedDefs_SkeletonFeedPost, newCursor *string, err error)
-	Describe(ctx context.Context) ([]appbsky.FeedDescribeFeedGenerator_Feed, error)
+aint that hard, go install go, setup postgres, and generate the required feed definitions under your user account. you can use https://pdsls.dev to generate a `app.bsky.feed.generator` record.
+Set the `rkey` to the desired short url value. itll look like: 
+```
+https://bsky.app/profile/{you}/feed/{rkey}
+```
+for the contents you can use the example below
+```
+{
+  "did": "did:web:${INSERT DID:WEB HERE}",
+  "$type": "app.bsky.feed.generator",
+  "createdAt": "2025-01-21T11:33:02.396Z",
+  "description": "wowww very descriptive",
+  "displayName": "Cool Feed Name",
 }
 ```
 
-`GetPage` gets a page of a feed for a given user with the limit and cursor provided, this is the main function that serves posts to a user.
+## Env
+You can check out `.env.example` for an example
 
-`Describe` is used by the router to advertise what feeds are available, for foward compatibility, `Feed`s should be self describing in case this endpoint allows more details about feeds to be provided.
 
-You can configure external resources and requirements in your Feed implementation before `Adding` the feed to the `FeedRouter` with `feedRouter.AddFeed([]string{"{feed_name}"}, feedInstance)`
+## Postgres
+Be sure to set up `.env` correctly
 
-This `Feed` interface is somewhat flexible right now but it could be better. I'm not sure if it will change in the future so keep that in mind when using this template.
+All relevant tables should be created automatically when needed.
 
-- This has since been updated to allow a Feed to take in a feed name when generating a page and register multiple aliases for feeds that are supported.
+## Index
+You should start Postgres first
+Then go run the firehose ingester in
+```
+cd ./indexer
+```
+and go compile it
+```
+go build -o indexer ./indexer.go && export $(grep -v '^#' ./../.env | xargs) && ./indexer
+```
+after it has been compiled, you can use `rerun.sh` to ensure it will automatically recover after failure
+
+## Serve
+Make sure the indexer (or at least Postgres) is running first:
+```
+go build -o feedgen cmd/main.go && export $(grep -v '^#' ./.env | xargs) && ./feedgen
+```
+the logs are pretty verbose imo, fyi
+
+## Todo
+- [ ] Faster Indexing
+- [ ] Proper Up-to-Date Following Indexing
+- [x] Repost Indicators
+- [ ] Cache Timeouts
+  - [x] Likes
+  - [x] Posts
+  - [x] Feed Caches
+  - [ ] Followings
+- [ ] More Fresh Feed Variants
+  - [ ] unFresh
+  - [x] +9 hrs
+  - [ ] Glimpse
+  - [ ] Media
+    - [ ] Fresh: Gram
+    - [ ] Fresh: Tube
+    - [ ] Fresh: Media Only
+    - [ ] Fresh: Text Only
+
+## Architecture
+Based on [go-bsky-feed-generator](https://github.com/ericvolp12/go-bsky-feed-generator). Read the README in the linked repo for more info about how it all works.
+
+### /feeds/static
+Basic example feed from the template. Kept as a sanity check if all else seems to fail.
+
+### /feeds/fresh
+Fresh feeds, all based around a shared Following feed builder and logic to set posts as viewed. May contain some remnant old references to the old name "rinds".
+

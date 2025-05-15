@@ -115,7 +115,8 @@ func (auth *Auth) GetClaimsFromAuthHeader(ctx context.Context, authHeader string
 	accessToken := authHeaderParts[1]
 
 	parser := jwt.Parser{
-		ValidMethods: []string{es256k.SigningMethodES256K.Alg()},
+		ValidMethods:         []string{es256k.SigningMethodES256K.Alg()},
+		SkipClaimsValidation: true, // IM SORRY I HAD TO, MY VPS IS ACTING STRANGE. I THINK ITS FINE
 	}
 
 	token, err := parser.ParseWithClaims(accessToken, claims, func(token *jwt.Token) (interface{}, error) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,10 +10,13 @@ import (
 	"os"
 	"time"
 
+	_ "github.com/lib/pq"
+
 	auth "github.com/ericvolp12/go-bsky-feed-generator/pkg/auth"
 	"github.com/ericvolp12/go-bsky-feed-generator/pkg/feedrouter"
 	ginendpoints "github.com/ericvolp12/go-bsky-feed-generator/pkg/gin"
 
+	freshfeeds "github.com/ericvolp12/go-bsky-feed-generator/pkg/feeds/fresh"
 	staticfeed "github.com/ericvolp12/go-bsky-feed-generator/pkg/feeds/static"
 	ginprometheus "github.com/ericvolp12/go-gin-prometheus"
 	"github.com/gin-gonic/gin"
@@ -27,6 +31,22 @@ import (
 
 func main() {
 	ctx := context.Background()
+
+	// Open the database connection
+	dbHost := os.Getenv("DB_HOST")
+	dbUser := os.Getenv("DB_USER")
+	dbName := os.Getenv("DB_NAME")
+	dbPassword := os.Getenv("DB_PASSWORD")
+	db, err := sql.Open("postgres", fmt.Sprintf("user=%s dbname=%s host=%s password=%s sslmode=disable", dbUser, dbName, dbHost, dbPassword))
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	// Ping the database to ensure the connection is established
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
+	}
 
 	// Configure feed generator from environment variables
 
@@ -88,8 +108,117 @@ func main() {
 		[]string{"at://did:plc:q6gjnaw2blty4crticxkmujt/app.bsky.feed.post/3jx7msc4ive26"},
 	)
 
+	// idk help me
+
+	rindsFeed, rindsFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"rinds",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"rinds",
+		false,
+	)
+
+	randomFeed, randomFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"random",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"random",
+		false,
+	)
+
+	repostsFeed, repostsFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"reposts",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"reposts",
+		false,
+	)
+	mnineFeed, mnineFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"mnine",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"mnine",
+		false,
+	)
+
+	rrindsFeed, rrindsFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"rinds-replies",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"rinds",
+		true,
+	)
+
+	rrandomFeed, rrandomFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"random-replies",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"random",
+		true,
+	)
+
+	rrepostsFeed, rrepostsFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"reposts-replies",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"reposts",
+		true,
+	)
+	rmnineFeed, rmnineFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"mnine-replies",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"mnine",
+		true,
+	)
+	orepliesFeed, orepliesFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"oreplies",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"oreplies",
+		true,
+	)
 	// Add the static feed to the feed generator
 	feedRouter.AddFeed(staticFeedAliases, staticFeed)
+
+	feedRouter.AddFeed(rindsFeedAliases, rindsFeed)
+	feedRouter.AddFeed(randomFeedAliases, randomFeed)
+	feedRouter.AddFeed(repostsFeedAliases, repostsFeed)
+	feedRouter.AddFeed(mnineFeedAliases, mnineFeed)
+
+	feedRouter.AddFeed(rrindsFeedAliases, rrindsFeed)
+	feedRouter.AddFeed(rrandomFeedAliases, rrandomFeed)
+	feedRouter.AddFeed(rrepostsFeedAliases, rrepostsFeed)
+	feedRouter.AddFeed(rmnineFeedAliases, rmnineFeed)
+
+	feedRouter.AddFeed(orepliesFeedAliases, orepliesFeed)
 
 	// Create a gin router with default middleware for logging and recovery
 	router := gin.Default()
