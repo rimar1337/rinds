@@ -121,6 +121,17 @@ func main() {
 		false,
 	)
 
+	localrindsFeed, localrindsFeedAliases, err := freshfeeds.NewStaticFeed(
+		ctx,
+		feedActorDID,
+		"localrinds-test",
+		// This static post is the conversation that sparked this demo repo
+		[]string{"at://did:plc:mn45tewwnse5btfftvd3powc/app.bsky.feed.post/3kgjjhlsnoi2f"},
+		db,
+		"localrinds-test",
+		false,
+	)
+
 	randomFeed, randomFeedAliases, err := freshfeeds.NewStaticFeed(
 		ctx,
 		feedActorDID,
@@ -208,6 +219,8 @@ func main() {
 	// Add the static feed to the feed generator
 	feedRouter.AddFeed(staticFeedAliases, staticFeed)
 
+	feedRouter.AddFeed(localrindsFeedAliases, localrindsFeed)
+
 	feedRouter.AddFeed(rindsFeedAliases, rindsFeed)
 	feedRouter.AddFeed(randomFeedAliases, randomFeed)
 	feedRouter.AddFeed(repostsFeedAliases, repostsFeed)
@@ -241,6 +254,21 @@ func main() {
 	ep := ginendpoints.NewEndpoints(feedRouter)
 	router.GET("/.well-known/did.json", ep.GetWellKnownDID)
 	router.GET("/xrpc/app.bsky.feed.describeFeedGenerator", ep.DescribeFeeds)
+	// Root route: ASCII art and GitHub link
+	router.GET("/", func(c *gin.Context) {
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.String(http.StatusOK, `   ____  _           _     
+  |  _ \(_)_ __   __| |___ 
+  | |_) | | '_ \ / _' / __|
+  |  _ <| | | | | (_| \__ \
+  |_| \_\_|_| |_|\__,_|___/
+                            
+bsky feed generator
+
+Code: https://github.com/rimar1337/rinds
+Flagship instance: https://bsky.app/profile/did:plc:mn45tewwnse5btfftvd3powc/feed/rinds
+`)
+	})
 
 	// Plug in Authentication Middleware
 	auther, err := auth.NewAuth(

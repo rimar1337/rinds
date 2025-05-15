@@ -182,7 +182,8 @@ func createTables(db *sql.DB) {
             id SERIAL PRIMARY KEY,
             rel_author TEXT NOT NULL,
             post_uri TEXT NOT NULL,
-						rel_date BIGINT NOT NULL
+						rel_date BIGINT NOT NULL,
+        		UNIQUE(rel_author, post_uri)
         );
     `)
 	if err != nil {
@@ -347,6 +348,8 @@ func batchInsertPosts(db *sql.DB) {
 		_, err := stmt.Exec(post.RelAuthor, post.PostUri, post.RelDate, post.IsRepost, post.RepostUri, post.ReplyTo)
 		if err != nil {
 			log.Printf("Error executing statement: %v", err)
+			log.Printf("Failed INSERT: %+v\nError: %v", post, err)
+			os.Exit(1) // Exit on error
 		}
 	}
 
@@ -360,11 +363,11 @@ func batchInsertPosts(db *sql.DB) {
 }
 
 func startBatchInsertLikesJob(db *sql.DB) {
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(batchInterval)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if len(likeBatch) > 0 {
+		if len(likeBatch) >= batchInsertSize {
 			batchInsertLikes(db)
 		}
 	}
@@ -392,6 +395,8 @@ func batchInsertLikes(db *sql.DB) {
 		_, err := stmt.Exec(like.RelAuthor, like.PostUri, like.RelDate)
 		if err != nil {
 			log.Printf("Error executing statement: %v", err)
+			log.Printf("Failed LIKE INSERT: %+v\nError: %v", like, err)
+			os.Exit(1) // Exit on error
 		}
 	}
 
