@@ -263,10 +263,13 @@ func main() {
   |  _ <| | | | | (_| \__ \
   |_| \_\_|_| |_|\__,_|___/
                             
-bsky feed generator
+bsky feed generators by @whey.party
 
 Code: https://github.com/rimar1337/rinds
-Flagship instance: https://bsky.app/profile/did:plc:mn45tewwnse5btfftvd3powc/feed/rinds
+Flagship Fresh Feeds Instance: https://bsky.app/profile/did:plc:mn45tewwnse5btfftvd3powc/feed/rinds
+
+Fresh Feeds icons by @pprmint.de
+Repository generated from https://github.com/ericvolp12/go-bsky-feed-generator
 `)
 	})
 
