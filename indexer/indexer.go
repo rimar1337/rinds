@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -13,7 +14,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const wsUrl = "wss://jetstream2.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post&wantedCollections=app.bsky.feed.repost&wantedCollections=app.bsky.feed.like"
+const wsUrl = "wss://jetstream2.us-west.bsky.network/subscribe?wantedCollections=app.bsky.feed.post&wantedCollections=app.bsky.feed.repost&wantedCollections=app.bsky.feed.like&wantedCollections=app.bsky.graph.follow"
 
 type LikeMessage struct {
 	Did    string `json:"did"`
@@ -38,6 +39,11 @@ type LikeRecord struct {
 	Reply     *Reply      `json:"reply,omitempty"`
 }
 
+type FollowRecord struct {
+	DID       string `json:"subject"`
+	createdAt string `json:"createdAt"`
+}
+
 type Reply struct {
 	Parent ReplySubject `json:"parent"`
 	Root   ReplySubject `json:"root"`
@@ -46,6 +52,30 @@ type Reply struct {
 type LikeSubject struct {
 	CID string `json:"cid"`
 	URI string `json:"uri"`
+	Raw string // Stores raw string if not a JSON object
+}
+
+// This handles both string and object forms
+func (ls *LikeSubject) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as object first
+	var obj struct {
+		CID string `json:"cid"`
+		URI string `json:"uri"`
+	}
+	if err := json.Unmarshal(data, &obj); err == nil && obj.URI != "" {
+		ls.CID = obj.CID
+		ls.URI = obj.URI
+		return nil
+	}
+
+	// If it's not a valid object, try to unmarshal as string
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		ls.Raw = str
+		return nil
+	}
+
+	return fmt.Errorf("LikeSubject: invalid JSON: %s", string(data))
 }
 
 type ReplySubject struct {
@@ -58,6 +88,7 @@ var lastLoggedSecond int64 // Keep track of the last logged second
 var (
 	postBatch       []Post
 	likeBatch       []Like
+	followBatch     []Follow
 	batchInsertSize = 1000             // Adjust the batch size as needed
 	batchInterval   = 30 * time.Second // Flush every 30 seconds
 )
@@ -75,6 +106,21 @@ type Like struct {
 	RelAuthor string
 	PostUri   string
 	RelDate   int64
+}
+
+type Follow struct {
+	RelAuthor        string
+	followSubjectDID string
+}
+
+var trackedDIDsMap map[string]struct{}
+var trackedDIDs []string
+
+func initTrackedDIDsMap(dids []string) {
+	trackedDIDsMap = make(map[string]struct{}, len(dids))
+	for _, did := range dids {
+		trackedDIDsMap[did] = struct{}{}
+	}
 }
 
 func getLastCursor(db *sql.DB) int64 {
@@ -118,6 +164,15 @@ func main() {
 	// Retrieve the last cursor
 	lastCursor := getLastCursor(db)
 
+	// initialize the tracked DIDs
+	trackedDIDs, err = getTrackedDIDs(context.Background(), db)
+	if err != nil {
+		log.Fatalf("Failed to get tracked DIDs: %v", err)
+	}
+	log.Printf("Tracked DIDs: %v\n", trackedDIDs)
+	initTrackedDIDsMap(trackedDIDs)
+
+	go startBatchInsertFollowJob(db)
 	// If the cursor is older than 24 hours, skip it
 	if lastCursor > 0 {
 		cursorTime := time.UnixMicro(lastCursor)
@@ -212,6 +267,7 @@ func createTables(db *sql.DB) {
 	}
 }
 func processMessage(db *sql.DB, msg LikeMessage) {
+	// log.Print("Processing message...")
 	// Convert cursor to time
 	cursorTime := time.UnixMicro(msg.TimeUs)
 
@@ -245,6 +301,7 @@ func processMessage(db *sql.DB, msg LikeMessage) {
 			deletePost(db, msg.Did, postUri, msg.TimeUs)
 		}
 	case "app.bsky.feed.repost":
+
 		if record.Subject.URI != "" {
 			if msg.Commit.Operation == "create" {
 				postBatch = append(postBatch, Post{msg.Did, record.Subject.URI, msg.TimeUs, true, repostUri, ""})
@@ -258,6 +315,20 @@ func processMessage(db *sql.DB, msg LikeMessage) {
 				likeBatch = append(likeBatch, Like{msg.Did, record.Subject.URI, msg.TimeUs})
 			} else if msg.Commit.Operation == "delete" {
 				deleteLike(db, msg.Did, record.Subject.URI)
+			}
+		}
+	case "app.bsky.graph.follow":
+		_, tracked := trackedDIDsMap[msg.Did]
+		if tracked {
+			// log.Printf("Following found tracked DID: %s\n", msg.Did)
+			if msg.Commit.Operation == "create" {
+				// log.Printf("Following Create; doer: %s, subject: %s\n", msg.Did, record.Subject.Raw)
+				followBatch = append(followBatch, Follow{msg.Did, record.Subject.Raw})
+			} else if msg.Commit.Operation == "delete" {
+				// log.Printf("Following Delete; doer: %s, subject: %s\n", msg.Did, record.Subject.Raw)
+				//log.Printf("Unfollowing: %s", msg.Commit.RKey)
+				// Remove the DID from the tracked DIDs map
+				deleteFollow(db, msg.Did, msg.Commit.RKey)
 			}
 		}
 	default:
@@ -288,6 +359,17 @@ func deleteLike(db *sql.DB, relAuthor, postUri string) {
 	`, relAuthor, postUri)
 	if err != nil {
 		log.Printf("Error deleting like: %v", err)
+	}
+}
+
+func deleteFollow(db *sql.DB, relAuthor, did string) {
+	unquotedTableName := "follows_" + relAuthor
+	tableName := pq.QuoteIdentifier(unquotedTableName)
+	_, err := db.Exec(fmt.Sprintf(`
+			DELETE FROM %s WHERE follow = $1;
+	`, tableName), did)
+	if err != nil {
+		log.Printf("Error deleting follow: %v", err)
 	}
 }
 
@@ -371,6 +453,55 @@ func startBatchInsertLikesJob(db *sql.DB) {
 			batchInsertLikes(db)
 		}
 	}
+}
+
+func startBatchInsertFollowJob(db *sql.DB) {
+	ticker := time.NewTicker(batchInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if len(followBatch) >= 1 {
+			batchInsertFollow(db)
+		}
+	}
+}
+func batchInsertFollow(db *sql.DB) {
+	tx, err := db.Begin()
+	if err != nil {
+		log.Printf("Error starting transaction: %v", err)
+		return
+	}
+
+	unquotedTableName := "follows_" + followBatch[0].RelAuthor
+	tableName := pq.QuoteIdentifier(unquotedTableName)
+
+	stmt, err := tx.Prepare(fmt.Sprintf(`
+		INSERT INTO %s (follow)
+			VALUES ($1)
+			ON CONFLICT (follow) DO NOTHING
+	`, tableName))
+	if err != nil {
+		log.Printf("Error preparing statement: %v", err)
+		return
+	}
+	defer stmt.Close()
+
+	for _, follow := range followBatch {
+		_, err := stmt.Exec(follow.followSubjectDID)
+		if err != nil {
+			log.Printf("Error executing statement: %v", err)
+			log.Printf("Failed FOLLOW INSERT: %+v\nError: %v", follow, err)
+			os.Exit(1) // Exit on error
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		log.Printf("Error committing transaction: %v", err)
+	}
+
+	// Clear the batch
+	followBatch = followBatch[:0]
 }
 
 func batchInsertLikes(db *sql.DB) {
@@ -476,4 +607,38 @@ func cleanOldFeedCaches(ctx context.Context, db *sql.DB) error {
 	}
 
 	return nil
+}
+
+// ehhhhh why are we doing this
+func getTrackedDIDs(ctx context.Context, db *sql.DB) ([]string, error) {
+	const prefix = "follows_"
+	query := `
+		SELECT table_name
+		FROM information_schema.tables
+		WHERE table_name LIKE $1
+	`
+	rows, err := db.QueryContext(ctx, query, prefix+"%")
+	if err != nil {
+		return nil, fmt.Errorf("error querying tracked follows tables: %w", err)
+	}
+	defer rows.Close()
+
+	var trackedDIDs []string
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			return nil, fmt.Errorf("error scanning table name: %w", err)
+		}
+		// Strip prefix to get the DID
+		if len(tableName) > len(prefix) {
+			did := tableName[len(prefix):]
+			trackedDIDs = append(trackedDIDs, did)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating tracked tables: %w", err)
+	}
+
+	return trackedDIDs, nil
 }

@@ -50,13 +50,12 @@ the logs are pretty verbose imo, fyi
 
 ## Todo
 - [ ] Faster Indexing
-- [ ] Proper Up-to-Date Following Indexing
+- [x] Proper Up-to-Date Following Indexing
 - [x] Repost Indicators
-- [ ] Cache Timeouts
+- [x] Cache Timeouts
   - [x] Likes
   - [x] Posts
   - [x] Feed Caches
-  - [ ] Followings
 - [ ] More Fresh Feed Variants
   - [ ] unFresh
   - [x] +9 hrs
