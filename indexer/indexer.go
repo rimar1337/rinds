@@ -136,6 +136,22 @@ func getLastCursor(db *sql.DB) int64 {
 	return lastCursor
 }
 
+// Periodically refreshes the trackedDIDs and trackedDIDsMap from the database.
+func startTrackedDIDRefreshJob(db *sql.DB) {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		updatedDIDs, err := getTrackedDIDs(context.Background(), db)
+		if err != nil {
+			log.Printf("Failed to refresh tracked DIDs: %v", err)
+			continue
+		}
+		initTrackedDIDsMap(updatedDIDs)
+		trackedDIDs = updatedDIDs
+		log.Printf("Refreshed tracked DIDs: %v\n", trackedDIDs)
+	}
+}
 func main() {
 	// Connect to Postgres	// Open the database connection
 	dbHost := os.Getenv("DB_HOST")
@@ -173,6 +189,9 @@ func main() {
 	initTrackedDIDsMap(trackedDIDs)
 
 	go startBatchInsertFollowJob(db)
+
+	go startTrackedDIDRefreshJob(db)
+
 	// If the cursor is older than 24 hours, skip it
 	if lastCursor > 0 {
 		cursorTime := time.UnixMicro(lastCursor)
