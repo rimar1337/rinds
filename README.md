@@ -1,18 +1,17 @@
 # Rinds
 A collection of feeds under one roof.
-
-I don't like Docker and I don't need to compile this, okay thanks!
+including Fresh Feeds
 
 ## Running
-aint that hard, go install go, setup postgres, and generate the required feed definitions under your user account. you can use https://pdsls.dev to generate a `app.bsky.feed.generator` record.
-Set the `rkey` to the desired short url value. itll look like: 
+Install go, setup postgres, and then generate the required feed definitions under your user account. You can use https://pdsls.dev to generate a `app.bsky.feed.generator` record.
+Set the `rkey` to the desired short url value. Itll look like: 
 ```
 https://bsky.app/profile/{you}/feed/{rkey}
 ```
 for the contents you can use the example below
 ```
 {
-  "did": "did:web:${INSERT DID:WEB HERE}",
+  "did": "did:web:${your service endpoint}",
   "$type": "app.bsky.feed.generator",
   "createdAt": "2025-01-21T11:33:02.396Z",
   "description": "wowww very descriptive",
@@ -20,9 +19,11 @@ for the contents you can use the example below
 }
 ```
 
+If you are specifically trying to run any of the preexisting feeds, make sure to use the rkey as defined in the /pkg/feeds/*/feed.go and main.go files
+
 ## Env
 You can check out `.env.example` for an example
-
+The port is for your feedgen serve, not your postgres port
 
 ## Postgres
 Be sure to set up `.env` correctly
@@ -31,22 +32,22 @@ All relevant tables should be created automatically when needed.
 
 ## Index
 You should start Postgres first
-Then go run the firehose ingester in
+Then go run the firehose indexder inside
 ```
 cd ./indexer
 ```
-and go compile it
+And then go compile it
 ```
 go build -o indexer ./indexer.go && export $(grep -v '^#' ./../.env | xargs) && ./indexer
 ```
-after it has been compiled, you can use `rerun.sh` to ensure it will automatically recover after failure
+Once compiled, you can use `rerun.sh` to ensure it will automatically recover after failure
 
 ## Serve
 Make sure the indexer (or at least Postgres) is running first:
 ```
 go build -o feedgen cmd/main.go && export $(grep -v '^#' ./.env | xargs) && ./feedgen
 ```
-the logs are pretty verbose imo, fyi
+Logs are pretty verbose, just FYI.
 
 ## Todo
 - [ ] Faster Indexing
@@ -67,11 +68,11 @@ the logs are pretty verbose imo, fyi
     - [ ] Fresh: Text Only
 
 ## Architecture
-Based on [go-bsky-feed-generator](https://github.com/ericvolp12/go-bsky-feed-generator). Read the README in the linked repo for more info about how it all works.
+Based on [go-bsky-feed-generator](https://github.com/ericvolp12/go-bsky-feed-generator). Read the README in the linked repo for more info about how it all works. This repository differs from the template by not using the docker system at all.
 
-### /feeds/static
+### /pkg/feeds/static
 Basic example feed from the template. Kept as a sanity check if all else seems to fail.
 
-### /feeds/fresh
-Fresh feeds, all based around a shared Following feed builder and logic to set posts as viewed. May contain some remnant old references to the old name "rinds".
+### /pkg/feeds/fresh
+Fresh feeds, all built around a shared Following feed builder and logic to set posts as viewed. May contain some remnant old references to the old name "rinds".
 
